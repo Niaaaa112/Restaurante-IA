@@ -64,7 +64,15 @@ elif seccion == "📅 Menú Semanal":
     st.header("📅 Menú recomendado de lunes a viernes")
 
     hoy = datetime.today()
-    dias_menu = [hoy + timedelta(days=i) for i in range(5)]
+weekday = hoy.weekday()  # lunes = 0, domingo = 6
+
+# Si hoy es sábado (5) o domingo (6), empezar desde el próximo lunes
+if weekday >= 5:
+    proximo_lunes = hoy + timedelta(days=(7 - weekday))
+else:
+    proximo_lunes = hoy - timedelta(days=weekday)
+
+dias_menu = [proximo_lunes + timedelta(days=i) for i in range(5)]  # Lunes a Viernes
     platos_disponibles = []
 
     for fecha in dias_menu:
