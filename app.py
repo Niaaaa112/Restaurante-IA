@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,118 +6,144 @@ import plotly.express as px
 from datetime import datetime, timedelta
 from babel.dates import format_date
 
-# Configuración de página
+# ---------- CONFIGURACION VISUAL ----------
 st.set_page_config(page_title="Restaurante IA", layout="wide")
 
-# Estilo
-st.markdown("""
-    <style>
-    .main {background-color: #f5f5f5;}
-    .css-1v0mbdj, .css-ffhzg2 {background-color: #ffffff; border-radius: 10px; padding: 1rem;}
-    </style>
-""", unsafe_allow_html=True)
+# ---------- CARGA DE DATOS ----------
+@st.cache_data
 
-# Sidebar (menú lateral)
-st.sidebar.title("🍽️ Restaurante IA")
-opcion = st.sidebar.radio("Selecciona una sección:", ["📈 Predicción de Demanda", "📦 Inventario", "📋 Menú del Día", "👨‍🍳 Planificación de Personal"])
+def cargar_datos():
+    excel_file = "https://github.com/Niaaaa112/Restaurante-IA/raw/main/datos_restaurante_completo.xlsx"
+    excel = pd.ExcelFile(excel_file)
+    ventas = pd.read_excel(excel, sheet_name="ventas")
+    ingredientes = pd.read_excel(excel, sheet_name="ingredientes")
+    stock = pd.read_excel(excel, sheet_name="stock")
+    return ventas, ingredientes, stock
 
-# Cargar datos desde GitHub
-excel_file = "https://github.com/Niaaaa112/Restaurante-IA/raw/refs/heads/main/datos_restaurante_completo.xlsx"
-df_ventas = pd.read_excel(excel_file, sheet_name="ventas")
-df_ingredientes = pd.read_excel(excel_file, sheet_name="ingredientes")
-df_stock = pd.read_excel(excel_file, sheet_name="stock")
+ventas, ingredientes, stock = cargar_datos()
 
-# Preprocesamiento
-df_ventas['fecha'] = pd.to_datetime(df_ventas['fecha'])
-df_stock['fecha_caducidad'] = pd.to_datetime(df_stock['fecha_caducidad'])
+# ---------- SIDEBAR ----------
+seccion = st.sidebar.selectbox("Selecciona una sección:", [
+    "📈 Predicción de Demanda",
+    "📦 Inventario",
+    "🍽️ Menú del Día",
+    "👨‍🍳 Personal",
+    "📊 Dashboard Resumen"
+])
 
-hoy = pd.Timestamp.today().normalize()
-df_futuro = pd.DataFrame({
-    'fecha': [hoy + timedelta(days=i) for i in range(7)],
-})
-df_futuro['dia_semana'] = df_futuro['fecha'].dt.day_name()
-df_futuro['clima'] = 'soleado'
-df_futuro['dia_festivo'] = df_futuro['fecha'].isin(df_ventas[df_ventas['dia_festivo'] == True]['fecha'].unique())
+# ---------- FUNCIONES AUXILIARES ----------
+def traducir_dia(fecha):
+    return format_date(fecha, format='EEEE', locale='es_ES')
 
-# Predicción de demanda (simulada)
-demanda_promedio = df_ventas.groupby('plato')['unidades'].mean()
-predicciones = []
-for _, row in df_futuro.iterrows():
-    for plato, media in demanda_promedio.items():
-        factor_festivo = 1.5 if row['dia_festivo'] else 1
-        factor_clima = 1.2 if row['clima'] == 'soleado' else 1
-        pred = int(media * factor_festivo * factor_clima)
-        predicciones.append({
-            'fecha': row['fecha'],
-            'plato': plato,
-            'unidades': pred
-        })
-df_pred = pd.DataFrame(predicciones)
+def simular_prediccion(fecha_base, dias):
+    dias_pred = []
+    platos = ventas["plato"].unique()
+    for i in range(dias):
+        fecha = fecha_base + timedelta(days=i)
+        dia = fecha.weekday()
+        festivo = 1 if dia in [5,6] else 0
+        clima = np.random.choice(["soleado", "lluvioso", "nublado"])
+        for plato in platos:
+            base = ventas[ventas["plato"]==plato]["unidades"].mean()
+            factor_dia = 1 + (0.1 if dia in [4,5] else -0.05)
+            factor_clima = 0.9 if clima == "lluvioso" else 1.0
+            pred = max(0, int(base * factor_dia * factor_clima * np.random.uniform(0.8,1.2)))
+            dias_pred.append({"fecha": fecha, "plato": plato, "unidades": pred})
+    return pd.DataFrame(dias_pred)
 
-# INVENTARIO
-estado_inventario = []
-for _, row in df_stock.iterrows():
-    if row['stock_actual'] < row['stock_minimo']:
-        estado = 'Bajo'
-    elif row['fecha_caducidad'] < hoy + timedelta(days=3):
-        estado = 'Próxima caducidad'
-    else:
-        estado = 'Correcto'
-    estado_inventario.append({
-        'ingrediente': row['ingrediente'],
-        'estado': estado
-    })
-df_estado = pd.DataFrame(estado_inventario)
 
-# MENÚ
-tipos = df_ventas['tipo_plato'].unique()
-menu_dias = {}
-for i in range(5):  # lunes a viernes
-    fecha = hoy + timedelta(days=i)
-    platos_disponibles = df_pred[df_pred['fecha'] == fecha]['plato'].tolist()
-    platos_disponibles = list(set(platos_disponibles))
-    menu = {
-        tipo: next((pl for pl in platos_disponibles if df_ventas[df_ventas['plato'] == pl]['tipo_plato'].iloc[0] == tipo), "No disponible")
-        for tipo in ['primer plato', 'segundo plato', 'postre']
-    }
-    menu_dias[fecha] = menu
+# ---------- PREDICCION DEMANDA ----------
+if seccion == "📈 Predicción de Demanda":
+    st.title("📈 Predicción de Demanda por Plato")
+    st.markdown("Predicción realista para los próximos 7 días según el plato.")
+    hoy = datetime.today().date()
+    df_pred = simular_prediccion(hoy, 7)
 
-# PERSONAL
-resumen = df_pred.groupby("fecha")["unidades"].sum().reset_index()
-resumen["cocineros"] = (resumen["unidades"] / 20).apply(np.ceil).astype(int)
-resumen["camareros"] = (resumen["unidades"] / 30).apply(np.ceil).astype(int)
-
-# MOSTRAR SECCIONES
-if opcion == "📈 Predicción de Demanda":
-    st.title("📈 Predicción de Demanda")
-    dias = st.slider("Selecciona cuántos días ver:", 1, 7, 5)
-    fig = px.bar(df_pred[df_pred['fecha'] <= hoy + timedelta(days=dias - 1)],
-                 x="fecha", y="unidades", color="plato",
-                 title="Demanda estimada por plato")
+    fig = px.bar(df_pred, x="fecha", y="unidades", color="plato", barmode="group",
+                 title="Demanda Estimada por Día", height=450)
     st.plotly_chart(fig, use_container_width=True)
 
-elif opcion == "📦 Inventario":
-    st.title("📦 Estado del Inventario")
-    colores = {'Correcto': 'lightgreen', 'Bajo': 'tomato', 'Próxima caducidad': 'orange'}
-    df_estado['color'] = df_estado['estado'].map(colores)
-    st.dataframe(df_estado[['ingrediente', 'estado']], use_container_width=True)
-    fig_inv = px.histogram(df_estado, x='estado', color='estado',
-                           color_discrete_map=colores, title="Resumen del Inventario")
-    st.plotly_chart(fig_inv, use_container_width=True)
+    st.dataframe(df_pred.pivot(index="fecha", columns="plato", values="unidades").fillna(0), height=300)
 
-elif opcion == "📋 Menú del Día":
-    st.title("📋 Menú recomendado")
-    for fecha, platos in menu_dias.items():
-        nombre_dia = format_date(fecha, format='EEEE', locale='es_ES')
-        st.subheader(f"{nombre_dia.capitalize()} - {fecha.strftime('%d/%m/%Y')}")
-        for tipo, plato in platos.items():
-            st.markdown(f"**{tipo.capitalize()}**: {plato}")
 
-elif opcion == "👨‍🍳 Planificación de Personal":
-    st.title("👨‍🍳 Planificación de Personal")
-    for _, row in resumen.iterrows():
-        fecha_txt = format_date(row['fecha'], format='full', locale='es_ES')
-        st.markdown(f"### 📅 {fecha_txt}")
-        st.markdown(f"👨‍🍳 Cocineros necesarios: **{row['cocineros']}**")
-        st.markdown(f"🧑‍💼 Camareros necesarios: **{row['camareros']}**")
+# ---------- INVENTARIO ----------
+if seccion == "📦 Inventario":
+    st.title("📦 Gestión de Inventario")
+    stock["estado"] = np.where(stock["stock_actual"] <= stock["stock_minimo"], "Bajo", "OK")
+    resumen = stock["estado"].value_counts().reset_index()
+    resumen.columns = ["estado", "cantidad"]
+
+    col1, col2 = st.columns([1,2])
+    with col1:
+        st.metric("Ingredientes OK", resumen[resumen.estado == "OK"]["cantidad"].values[0])
+        st.metric("Ingredientes Bajo Stock", resumen[resumen.estado == "Bajo"]["cantidad"].values[0])
+
+    with col2:
+        fig = px.pie(resumen, names="estado", values="cantidad", title="Estado del Inventario",
+                     color_discrete_sequence=["#EF553B", "#00CC96"])
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Ingredientes críticos")
+    criticos = stock[stock.estado == "Bajo"].sort_values("stock_actual")
+    st.dataframe(criticos, height=300)
+
+
+# ---------- MENÚ DEL DÍA ----------
+if seccion == "🍽️ Menú del Día":
+    st.title("🍽️ Sugerencia de Menús Semanales")
+    platos = ventas[["plato", "tipo_plato"]].drop_duplicates()
+
+    dias_semana = ["lunes", "martes", "miércoles", "jueves", "viernes"]
+    menu = {}
+    usados = []
+    for dia in dias_semana:
+        primer = platos[(platos.tipo_plato == "primer") & (~platos.plato.isin(usados))].sample(1)
+        segundo = platos[(platos.tipo_plato == "segundo") & (~platos.plato.isin(usados))].sample(1)
+        postre = platos[(platos.tipo_plato == "postre") & (~platos.plato.isin(usados))].sample(1)
+        usados += [primer.plato.values[0], segundo.plato.values[0], postre.plato.values[0]]
+        menu[dia] = {
+            "Primer Plato": primer.plato.values[0],
+            "Segundo Plato": segundo.plato.values[0],
+            "Postre": postre.plato.values[0]
+        }
+
+    df_menu = pd.DataFrame(menu).T
+    st.dataframe(df_menu)
+
+
+# ---------- PLANIFICACION DE PERSONAL ----------
+if seccion == "👨‍🍳 Personal":
+    st.title("👨‍🍳 Planificación del Personal")
+    hoy = datetime.today().date()
+    pred = simular_prediccion(hoy, 7)
+    resumen = pred.groupby("fecha")["unidades"].sum().reset_index()
+    resumen["cocineros"] = (resumen["unidades"] / 40).apply(np.ceil)
+    resumen["camareros"] = (resumen["unidades"] / 30).apply(np.ceil)
+
+    st.subheader("Demanda y Personal Recomendado")
+    st.dataframe(resumen)
+
+    fig = px.line(resumen, x="fecha", y=["cocineros", "camareros"], markers=True,
+                  title="Recomendación de Personal", height=400)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# ---------- DASHBOARD RESUMEN ----------
+if seccion == "📊 Dashboard Resumen":
+    st.title("📊 Dashboard General del Restaurante")
+    st.markdown("Resumen visual del estado actual")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Platos Vendidos", ventas.unidades.sum())
+    with col2:
+        st.metric("Ingresos Totales (€)", int(ventas.unidades @ ventas.precio))
+    with col3:
+        st.metric("Ingredientes en Bajo Stock", stock[stock.stock_actual <= stock.stock_minimo].shape[0])
+
+    st.subheader("Ranking de Platos Más Vendidos")
+    top = ventas.groupby("plato")["unidades"].sum().sort_values(ascending=False).head(10)
+    fig = px.bar(top, x=top.values, y=top.index, orientation="h", title="Top 10 Platos", height=400)
+    st.plotly_chart(fig, use_container_width=True)
+
 
