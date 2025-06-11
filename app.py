@@ -4,7 +4,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import random
 
-# Función para traducir días de la semana al español
+# Traducción de días
 def traducir_dia(nombre_en):
     dias = {
         "Monday": "Lunes", "Tuesday": "Martes", "Wednesday": "Miércoles",
@@ -24,7 +24,7 @@ st.title("🍽️ App Inteligente para Restaurantes")
 
 seccion = st.sidebar.radio("Ir a sección:", ["📊 Predicción de Demanda", "📦 Gestión de Inventario", "📅 Menú Semanal", "👨‍🍳 Planificación de Personal"])
 
-# =================== PREDICCIÓN DE DEMANDA ===================
+# =============== PREDICCIÓN DE DEMANDA ===============
 if seccion == "📊 Predicción de Demanda":
     st.header("📊 Predicción por tipo de plato")
 
@@ -47,7 +47,7 @@ if seccion == "📊 Predicción de Demanda":
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(pred_df)
 
-# =================== GESTIÓN DE INVENTARIO ===================
+# =============== GESTIÓN DE INVENTARIO ===============
 elif seccion == "📦 Gestión de Inventario":
     st.header("📦 Estado del Inventario")
 
@@ -59,24 +59,24 @@ elif seccion == "📦 Gestión de Inventario":
     stock.loc[(stock["fecha_caducidad"] - hoy).dt.days < 2, "estado"] = "⚠️ Próximo a caducar"
     st.dataframe(stock[["ingrediente", "stock_actual", "stock_minimo", "fecha_caducidad", "estado"]])
 
-# =================== MENÚ SEMANAL ===================
+# =============== MENÚ SEMANAL ===============
 elif seccion == "📅 Menú Semanal":
     st.header("📅 Menú recomendado de lunes a viernes")
 
     hoy = datetime.today()
-weekday = hoy.weekday()  # lunes = 0, domingo = 6
+    weekday = hoy.weekday()
 
-# Si hoy es sábado (5) o domingo (6), empezar desde el próximo lunes
-if weekday >= 5:
-    proximo_lunes = hoy + timedelta(days=(7 - weekday))
-else:
-    proximo_lunes = hoy - timedelta(days=weekday)
+    if weekday >= 5:
+        proximo_lunes = hoy + timedelta(days=(7 - weekday))
+    else:
+        proximo_lunes = hoy - timedelta(days=weekday)
 
-dias_menu = [proximo_lunes + timedelta(days=i) for i in range(5)]  # Lunes a Viernes
-    platos_disponibles = []
+    dias_menu = [proximo_lunes + timedelta(days=i) for i in range(5)]  # lunes a viernes
+    usados_en_la_semana = set()
 
     for fecha in dias_menu:
         dia_nombre = traducir_dia(fecha.strftime("%A"))
+
         disponibles = []
         for plato in ingredientes["plato"].unique():
             necesario = ingredientes[ingredientes["plato"] == plato]
@@ -91,16 +91,24 @@ dias_menu = [proximo_lunes + timedelta(days=i) for i in range(5)]  # Lunes a Vie
             if es_apto:
                 disponibles.append(plato)
 
-        tipo_entrante = [p for p in disponibles if ventas[ventas["plato"] == p]["tipo_plato"].iloc[0] == "entrante"]
-        tipo_principal = [p for p in disponibles if ventas[ventas["plato"] == p]["tipo_plato"].iloc[0] == "principal"]
-        tipo_postre = [p for p in disponibles if ventas[ventas["plato"] == p]["tipo_plato"].iloc[0] == "postre"] if "postre" in ventas["tipo_plato"].unique() else []
+        random.shuffle(disponibles)
+
+        tipo_entrante = [p for p in disponibles if ventas[ventas["plato"] == p]["tipo_plato"].iloc[0] == "entrante" and p not in usados_en_la_semana]
+        tipo_principal = [p for p in disponibles if ventas[ventas["plato"] == p]["tipo_plato"].iloc[0] == "principal" and p not in usados_en_la_semana]
+        tipo_postre = [p for p in disponibles if "postre" in ventas["tipo_plato"].unique() and ventas[ventas["plato"] == p]["tipo_plato"].iloc[0] == "postre" and p not in usados_en_la_semana]
+
+        entrante = tipo_entrante[0] if tipo_entrante else "No disponible"
+        principal = tipo_principal[0] if tipo_principal else "No disponible"
+        postre = tipo_postre[0] if tipo_postre else "No disponible"
+
+        usados_en_la_semana.update([entrante, principal, postre])
 
         st.subheader(f"📅 {dia_nombre} ({fecha.strftime('%d/%m')})")
-        st.markdown(f"- 🥗 **Entrante:** {tipo_entrante[0] if tipo_entrante else 'No disponible'}")
-        st.markdown(f"- 🍛 **Principal:** {tipo_principal[0] if tipo_principal else 'No disponible'}")
-        st.markdown(f"- 🍮 **Postre:** {tipo_postre[0] if tipo_postre else 'No disponible'}")
+        st.markdown(f"- 🥗 **Entrante:** {entrante}")
+        st.markdown(f"- 🍛 **Principal:** {principal}")
+        st.markdown(f"- 🍮 **Postre:** {postre}")
 
-# =================== PLANIFICACIÓN DE PERSONAL ===================
+# =============== PLANIFICACIÓN DE PERSONAL ===============
 elif seccion == "👨‍🍳 Planificación de Personal":
     st.header("👨‍🍳 Recomendación de Personal según Demanda")
 
@@ -126,5 +134,4 @@ elif seccion == "👨‍🍳 Planificación de Personal":
         })
 
     st.dataframe(pd.DataFrame(datos))
-
 
