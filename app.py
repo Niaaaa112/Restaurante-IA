@@ -9,64 +9,20 @@ import warnings
 warnings.filterwarnings('ignore')
 pd.set_option('display.float_format', '{:.2f}'.format)
 
-# ========== CONFIGURACIÓN GENERAL ==========
-st.set_page_config(
-    page_title="RestaurantPro IA",
-    page_icon="🍽️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# === CONFIGURACIÓN GENERAL ===
+st.set_page_config(page_title="Gestión Restaurante IA", layout="wide")
 
-# Estilos CSS personalizados
-st.markdown("""
-    <style>
-    /* Sidebar mejorado */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(135deg, #2b5876 0%, #4e4376 100%) !important;
-        color: white !important;
-    }
-    [data-testid="stSidebar"] .sidebar-content {
-        padding: 1.5rem;
-    }
-    [data-testid="stSidebar"] .sidebar-title {
-        color: white !important;
-    }
-    
-    /* Tarjetas de métricas */
-    .metric-card {
-        background: white;
-        border-radius: 10px;
-        padding: 1rem;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        margin-bottom: 1rem;
-    }
-    .metric-card h3 {
-        color: #666;
-        font-size: 1rem;
-        margin: 0 0 0.5rem 0;
-    }
-    .metric-card h2 {
-        color: #333;
-        font-size: 1.8rem;
-        margin: 0;
-    }
-    
-    /* Mejoras generales */
-    .stDataFrame {
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .stAlert {
-        border-radius: 10px;
-    }
-    
-    /* Colores para estados */
-    .critical { color: #d62728; font-weight: bold; }
-    .warning { color: #ff7f0e; font-weight: bold; }
-    .success { color: #2ca02c; font-weight: bold; }
-    </style>
-""", unsafe_allow_html=True)
-
+# CSS simplificado sin llaves problemáticas
+st.write('''
+<style>
+[data-testid="stSidebar"] > div:first-child { background-color: #f5f5f5; }
+.block-container { padding: 2rem; }
+.stMetric { border: 1px solid #f0f2f6; border-radius: 10px; padding: 15px; }
+.stMetric label { font-size: 1rem; color: #636363; }
+.stMetric h1 { color: #000; }
+.stAlert { border-radius: 10px; }
+</style>
+''', unsafe_allow_html=True)
 # ========== CARGA Y PREPARACIÓN DE DATOS ==========
 @st.cache_data(ttl=3600)  # Cache por 1 hora
 def load_data():
