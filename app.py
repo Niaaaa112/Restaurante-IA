@@ -3,10 +3,15 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
 import random
-import locale
 
-# Configurar idioma español para días de la semana
-locale.setlocale(locale.LC_TIME, 'es_ES.UTF-8')
+# Función para traducir días de la semana al español
+def traducir_dia(nombre_en):
+    dias = {
+        "Monday": "Lunes", "Tuesday": "Martes", "Wednesday": "Miércoles",
+        "Thursday": "Jueves", "Friday": "Viernes", "Saturday": "Sábado",
+        "Sunday": "Domingo"
+    }
+    return dias.get(nombre_en, nombre_en)
 
 # Cargar datos
 excel = pd.ExcelFile("datos_restaurante_actualizado.xlsx")
@@ -15,7 +20,6 @@ ingredientes = excel.parse("ingredientes")
 stock = excel.parse("stock")
 
 st.set_page_config(page_title="Restaurante IA", layout="wide")
-
 st.title("🍽️ App Inteligente para Restaurantes")
 
 seccion = st.sidebar.radio("Ir a sección:", ["📊 Predicción de Demanda", "📦 Gestión de Inventario", "📅 Menú Semanal", "👨‍🍳 Planificación de Personal"])
@@ -32,7 +36,6 @@ if seccion == "📊 Predicción de Demanda":
     prediccion = []
 
     for fecha in fechas:
-        dia = fecha.strftime("%A")
         for plato in platos:
             base = ventas[ventas["plato"] == plato]["unidades"].mean()
             variacion = random.uniform(0.8, 1.2)
@@ -65,7 +68,7 @@ elif seccion == "📅 Menú Semanal":
     platos_disponibles = []
 
     for fecha in dias_menu:
-        dia_nombre = fecha.strftime("%A")
+        dia_nombre = traducir_dia(fecha.strftime("%A"))
         disponibles = []
         for plato in ingredientes["plato"].unique():
             necesario = ingredientes[ingredientes["plato"] == plato]
@@ -101,13 +104,14 @@ elif seccion == "👨‍🍳 Planificación de Personal":
     datos = []
     for i in range(7):
         fecha = datetime.today() + timedelta(days=i)
-        dia = fecha.strftime("%A").lower()
+        dia_en = fecha.strftime("%A")
+        dia = traducir_dia(dia_en).lower()
         estimado = int(random.gauss(base.get(dia, 60), 10))
         cocineros = max(1, estimado // 30)
         camareros = max(1, estimado // 20)
         datos.append({
             "Fecha": fecha.strftime("%d/%m/%Y"),
-            "Día": fecha.strftime("%A"),
+            "Día": traducir_dia(dia_en),
             "Clientes estimados": estimado,
             "Cocineros necesarios": cocineros,
             "Camareros necesarios": camareros
