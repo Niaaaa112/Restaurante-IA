@@ -1,112 +1,119 @@
-# app.py (v2 mejorada)
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
+import random
 
-st.set_page_config(page_title="IA para Restaurantes", layout="wide")
+# Cargar datos
+excel = pd.ExcelFile("datos_restaurante_actualizado.xlsx")
+ventas = excel.parse("ventas")
+ingredientes = excel.parse("ingredientes")
+stock = excel.parse("stock")
 
-# Sidebar
-st.sidebar.title("📊 Panel de Control")
-page = st.sidebar.radio("Ir a:", ["Predicción", "Inventario", "Menú del Día", "Personal"])
+st.set_page_config(page_title="Gestión Restaurante IA", layout="wide")
 
-uploaded_file = st.sidebar.file_uploader("📁 Subir archivo Excel", type=["xlsx"])
+st.title("📊 Dashboard Inteligente para Restaurantes")
 
-if uploaded_file:
-    # Leer las hojas
-    ventas = pd.read_excel(uploaded_file, sheet_name="ventas")
-    ingredientes = pd.read_excel(uploaded_file, sheet_name="ingredientes")
-    stock = pd.read_excel(uploaded_file, sheet_name="stock")
+seccion = st.sidebar.radio("Ir a sección:", ["📈 Predicción de Demanda", "📦 Gestión de Inventario", "🍽️ Menú del Día", "👨‍🍳 Planificación de Personal"])
 
-    # --- PREDICCIÓN ---
-    if page == "Predicción":
-        st.title("🔮 Predicción de Demanda")
+# =================== PREDICCIÓN DE DEMANDA ===================
+if seccion == "📈 Predicción de Demanda":
+    st.header("📈 Predicción estimada de platos servidos por día")
 
-        dias_futuros = st.selectbox("Selecciona rango de predicción:", [7, 14, 30])
-        hoy = datetime.today()
-        fechas = [hoy + timedelta(days=i) for i in range(dias_futuros)]
-        dias_semana = [f.strftime("%A") for f in fechas]
+    dias = st.selectbox("Selecciona rango de días:", [7, 14, 30])
+    hoy = datetime.today()
+    fechas = [hoy + timedelta(days=i) for i in range(dias)]
 
-        media_ventas = ventas.groupby("dia_semana")["unidades"].mean()
-        predicciones = [media_ventas.get(dia, media_ventas.mean()) for dia in dias_semana]
+    # Estimar demanda total con variación aleatoria y patrón por día de semana
+    base_demanda = {
+        "Lunes": 50, "Martes": 55, "Miércoles": 60,
+        "Jueves": 65, "Viernes": 80, "Sábado": 100, "Domingo": 90
+    }
 
-        df_pred = pd.DataFrame({"Fecha": fechas, "Demanda Estimada": predicciones})
-        fig = px.line(df_pred, x="Fecha", y="Demanda Estimada", markers=True)
-        st.plotly_chart(fig, use_container_width=True)
+    demanda = []
+    for fecha in fechas:
+        dia = fecha.strftime("%A")
+        media = base_demanda.get(dia, 60)
+        estimado = int(random.gauss(media, 10))  # variación
+        demanda.append(max(0, estimado))
 
-    # --- INVENTARIO ---
-    elif page == "Inventario":
-        st.title("📦 Gestión de Inventario")
+    fig = go.Figure(data=go.Scatter(x=fechas, y=demanda, mode='lines+markers', name='Platos estimados'))
+    fig.update_layout(title="Demanda Estimada de Platos", xaxis_title="Fecha", yaxis_title="Nº de platos", template="plotly_white")
+    st.plotly_chart(fig, use_container_width=True)
 
-        stock["estado"] = "✅ OK"
-        stock.loc[stock["stock_actual"] < stock["stock_minimo"], "estado"] = "🔴 Bajo Stock"
-        stock.loc[stock["fecha_caducidad"] < datetime.today() + timedelta(days=3), "estado"] = "🟠 Próximo a Caducar"
+# =================== GESTIÓN DE INVENTARIO ===================
+elif seccion == "📦 Gestión de Inventario":
+    st.header("📦 Estado de Ingredientes")
 
-        st.dataframe(stock.sort_values("estado"))
+    hoy = datetime.today()
+    stock["fecha_caducidad"] = pd.to_datetime(stock["fecha_caducidad"])
+    stock["estado"] = "✅ OK"
 
-        alertas = stock[stock["estado"] != "✅ OK"]
-        if not alertas.empty:
-            st.warning("⚠️ Ingredientes con incidencias:")
-            st.dataframe(alertas)
-        else:
-            st.success("Todo en orden ✅")
+    # Marcar problemas
+    stock.loc[stock["stock_actual"] < stock["stock_minimo"], "estado"] = "🔴 Bajo stock"
+    stock.loc[(stock["fecha_caducidad"] - hoy).dt.days < 2, "estado"] = "🟠 Próximo a caducar"
 
-    # --- MENÚ DEL DÍA ---
-    elif page == "Menú del Día":
-        st.title("📋 Recomendación de Menú Diario")
+    st.dataframe(stock.style.applymap(
+        lambda val: 'background-color: #ffcccc' if val == '🔴 Bajo stock' else ('background-color: #fff3cd' if val == '🟠 Próximo a caducar' else ''),
+        subset=['estado']
+    ))
 
-        # Platos disponibles con stock suficiente
-        disponibles = []
-        for plato in ingredientes["plato"].unique():
-            sub = ingredientes[ingredientes["plato"] == plato]
-            suficiente = True
-            for _, row in sub.iterrows():
-                ing = row["ingrediente"]
-                cantidad = row["cantidad_por_plato"]
-                stock_actual = stock.loc[stock["ingrediente"] == ing, "stock_actual"].values
-                if len(stock_actual) == 0 or stock_actual[0] < cantidad:
-                    suficiente = False
-                    break
-            if suficiente:
-                disponibles.append(plato)
+# =================== MENÚ DEL DÍA ===================
+elif seccion == "🍽️ Menú del Día":
+    st.header("🍽️ Recomendación de menú para hoy")
 
-        # Ordenar por caducidad de ingredientes involucrados
-        menu = []
-        for plato in disponibles:
-            caducidades = []
-            for ing in ingredientes[ingredientes["plato"] == plato]["ingrediente"]:
-                cad = stock.loc[stock["ingrediente"] == ing, "fecha_caducidad"].values
-                if len(cad):
-                    caducidades.append(cad[0])
-            fecha_min = min(caducidades) if caducidades else datetime.max
-            menu.append((plato, fecha_min))
+    hoy = datetime.today()
+    dia_semana = hoy.strftime("%A")
 
-        menu_ordenado = sorted(menu, key=lambda x: x[1])[:3]
-        st.markdown("### Menú sugerido para hoy:")
-        for plato, fecha in menu_ordenado:
-            st.markdown(f"- **{plato}** (usar antes del {pd.to_datetime(fecha).date()})")
+    # Buscar platos que pueden hacerse según stock
+    platos_recomendables = []
+    for plato in ingredientes["plato"].unique():
+        ingredientes_plato = ingredientes[ingredientes["plato"] == plato]
+        disponible = True
+        for _, row in ingredientes_plato.iterrows():
+            ing = row["ingrediente"]
+            cantidad = row["cantidad_por_plato"]
+            ing_stock = stock[stock["ingrediente"] == ing]
+            if ing_stock.empty or ing_stock.iloc[0]["stock_actual"] < cantidad or ing_stock.iloc[0]["fecha_caducidad"] < hoy + timedelta(days=1):
+                disponible = False
+                break
+        if disponible:
+            platos_recomendables.append(plato)
 
-    # --- PERSONAL ---
-    elif page == "Personal":
-        st.title("👨‍🍳 Planificación de Personal")
+    if platos_recomendables:
+        st.success("Menú sugerido (según stock y caducidad):")
+        for plato in platos_recomendables[:3]:
+            st.markdown(f"- 🍽️ **{plato}**")
+    else:
+        st.error("No hay platos recomendables hoy por falta de stock o caducidad cercana.")
 
-        dias = 7
-        hoy = datetime.today()
-        fechas = [hoy + timedelta(days=i) for i in range(dias)]
-        dias_semana = [f.strftime("%A") for f in fechas]
+# =================== PERSONAL ===================
+elif seccion == "👨‍🍳 Planificación de Personal":
+    st.header("👨‍🍳 Recomendación de personal según demanda")
 
-        media_ventas = ventas.groupby("dia_semana")["unidades"].mean()
-        predicciones = [media_ventas.get(dia, media_ventas.mean()) for dia in dias_semana]
+    dias = 7
+    hoy = datetime.today()
+    fechas = [hoy + timedelta(days=i) for i in range(dias)]
+    base_demanda = {
+        "Lunes": 50, "Martes": 55, "Miércoles": 60,
+        "Jueves": 65, "Viernes": 80, "Sábado": 100, "Domingo": 90
+    }
 
-        df_staff = pd.DataFrame({
-            "Fecha": fechas,
-            "Demanda Estimada": predicciones,
+    resumen = []
+    for fecha in fechas:
+        dia = fecha.strftime("%A")
+        estimado = int(random.gauss(base_demanda.get(dia, 60), 10))
+        clientes = max(0, estimado)
+        cocineros = max(1, clientes // 30)
+        camareros = max(1, clientes // 20)
+        resumen.append({
+            "Fecha": fecha.strftime("%Y-%m-%d"),
+            "Día": dia,
+            "Clientes estimados": clientes,
+            "Cocineros": cocineros,
+            "Camareros": camareros
         })
-        df_staff["Cocineros"] = (df_staff["Demanda Estimada"] / 30).apply(lambda x: max(1, round(x)))
-        df_staff["Camareros"] = (df_staff["Demanda Estimada"] / 25).apply(lambda x: max(1, round(x)))
 
-        st.dataframe(df_staff)
+    st.dataframe(pd.DataFrame(resumen))
 
-else:
-    st.warning("📌 Por favor, sube el archivo Excel con los datos del mes.")
 
